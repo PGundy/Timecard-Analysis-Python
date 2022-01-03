@@ -118,3 +118,6 @@ dmypy.json
 
 #Archive zips
 archive.zip
+
+# DS_Store is useless for me
+.DS_Store
