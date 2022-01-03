@@ -114,4 +114,7 @@ dmypy.json
 .pyre/
 
 #DS Store
-*.DS_Store
+.DS_store
+
+#Archive zips
+archive.zip
