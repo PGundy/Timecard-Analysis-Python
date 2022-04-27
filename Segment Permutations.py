@@ -1,21 +1,19 @@
 ##
 #%%
-import pandas as pd
-import numpy as np
-import seaborn as sns
 import datetime
-import random
-
-# from datetime import timedelta -- commented out because of learning nesting
-import regex as re
 
 ## to locate the csv we want
 import os
+import random
 
+import numpy as np
+import pandas as pd
+
+# from datetime import timedelta -- commented out because of learning nesting
+import regex as re
+import seaborn as sns
 
 #%%
-
-###########################################
 ############# create time_key #############
 ###########################################
 
@@ -28,7 +26,9 @@ minute_end = minute_start
 
 ## Create dataframe, & raw elapsed time
 time_key = minute_start.merge(minute_end, how="cross")
-time_key.rename(inplace=True, columns={"0_x": "start_time", "0_y": "end_time"})
+time_key.rename(
+    inplace=True, columns={"0_x": "start_time", "0_y": "end_time"}
+)
 time_key["active_time"] = time_key["end_time"] - time_key["start_time"]
 
 # Create dates, correct for overnights & elapsed time
@@ -41,21 +41,27 @@ time_key["end_date"] = np.where(
     time_key["start_date"] + datetime.timedelta(days=1),
 )
 time_key["active_time"] = np.where(
-    time_key["overnight"], time_key["active_time"] + 1440, time_key["active_time"]
+    time_key["overnight"],
+    time_key["active_time"] + 1440,
+    time_key["active_time"],
 )
 
 
 # reorder columns to be easier to read
 time_key = time_key[
-    ["start_date", "start_time", "end_date", "end_time", "active_time", "overnight"]
+    [
+        "start_date",
+        "start_time",
+        "end_date",
+        "end_time",
+        "active_time",
+        "overnight",
+    ]
 ]
 
 time_key["active_hours"] = round(time_key["active_time"] / 60, 4)
 
-time_key.head(n=10)
 
-
-###########################################
 ############ beautiful columns ############
 ###########################################
 
@@ -68,10 +74,9 @@ time_key["active_time"] = time_key["active_time"].apply(
     lambda x: datetime.timedelta(minutes=x)
 )
 
-time_key.sample(n=10)
+time_key.head(n=10)
 
 # %%
-###########################################
 ######### Load the template data ##########
 ###########################################
 
@@ -94,16 +99,19 @@ simData.rename(
 simData["eeid"] = pd.to_numeric(
     simData["shift_type"].str.replace(r"\_", "", regex=True)
 )
-simData["shift_type"] = np.where(simData["shift_type"] == "_000001", "type1", "type2")
+simData["shift_type"] = np.where(
+    simData["shift_type"] == "_000001", "type1", "type2"
+)
 
 ## Artificially segment each shift_type into the 1XXXX & the 2XXXX groups.
 simData["eeid"] = np.where(
-    simData["shift_type"] == "type1", simData["eeid"] + 10000, simData["eeid"] + 20000
+    simData["shift_type"] == "type1",
+    simData["eeid"] + 10000,
+    simData["eeid"] + 20000,
 )
 
 
 # %%
-###########################################
 ########### Create the 'class' ############
 ###########################################
 class_size_input = 25  # NOTE: [final_class_size = (2 * class_size_input)]
@@ -121,15 +129,18 @@ for i in class_size_multiplier:
 
         simData_large = simData_large.merge(temp, how="outer")
 
-print("There are", simData_large["eeid"].nunique(), "eeids are in the data.")
+print(
+    "There are", simData_large["eeid"].nunique(), "eeids are in the data."
+)
 
 # %%
-###########################################
 ######### Make class more unique ##########
 ###########################################
 
 ## Let's add some randomness now that we have more unique eeids -- make it 'unique'
-simData_large["clock_start"] = simData_large["clock_start"] + pd.to_timedelta(
+simData_large["clock_start"] = simData_large[
+    "clock_start"
+] + pd.to_timedelta(
     np.random.randint(0, 8, simData_large.shape[0]), unit="minute"
 )
 
@@ -137,7 +148,9 @@ simData_large["clock_end"] = simData_large["clock_end"] + pd.to_timedelta(
     np.random.randint(9, 25, simData_large.shape[0]), unit="minute"
 )
 
-simData_large["date"] = simData_large["clock_start"].apply(lambda x: x.date())
+simData_large["date"] = simData_large["clock_start"].apply(
+    lambda x: x.date()
+)
 
 ## set these columns as index, sort by index, reset index to integer
 ### This sorts the entire dataframe & keeps our desired setup
@@ -150,12 +163,13 @@ simData_large = simData_large[
 simData_large.head(n=15)
 
 # %%
-###########################################
 ######## Merge time_key into data #########
 ###########################################
 
 ## create the "HH:MM" merge key
-simData_large["start_time"] = simData_large["clock_start"].dt.strftime("%H:%M")
+simData_large["start_time"] = simData_large["clock_start"].dt.strftime(
+    "%H:%M"
+)
 simData_large["end_time"] = simData_large["clock_end"].dt.strftime("%H:%M")
 
 df_analyze = simData_large.merge(
@@ -169,27 +183,37 @@ df_analyze.drop(columns="shift_type", inplace=True)
 
 
 # %%
-###########################################
 ###### eval time to next/last event #######
 ###########################################
-df_analyze["clock_start_lead1"] = df_analyze.groupby("eeid")[["clock_start"]].apply(
+df_analyze["clock_start_lead1"] = df_analyze.groupby("eeid")[
+    ["clock_start"]
+].apply(
     lambda x: x.shift(-1)  ## pull it back 1, so it is the row's last start
 )
-df_analyze["gap_next"] = df_analyze["clock_start_lead1"] - df_analyze["clock_end"]
-df_analyze["gap_next"] = df_analyze["gap_next"].fillna(pd.Timedelta(hours=24 * 99))
+df_analyze["gap_next"] = (
+    df_analyze["clock_start_lead1"] - df_analyze["clock_end"]
+)
+df_analyze["gap_next"] = df_analyze["gap_next"].fillna(
+    pd.Timedelta(hours=24 * 99)
+)
 df_analyze = df_analyze.drop(columns="clock_start_lead1")
 
 
-df_analyze["clock_end_lag1"] = df_analyze.groupby("eeid")[["clock_end"]].apply(
+df_analyze["clock_end_lag1"] = df_analyze.groupby("eeid")[
+    ["clock_end"]
+].apply(
     lambda x: x.shift(1)  ## pull it forward 1, so it is the row's next end
 )
-df_analyze["gap_last"] = df_analyze["clock_start"] - df_analyze["clock_end_lag1"]
-df_analyze["gap_last"] = df_analyze["gap_last"].fillna(pd.Timedelta(hours=24 * 99))
+df_analyze["gap_last"] = (
+    df_analyze["clock_start"] - df_analyze["clock_end_lag1"]
+)
+df_analyze["gap_last"] = df_analyze["gap_last"].fillna(
+    pd.Timedelta(hours=24 * 99)
+)
 df_analyze = df_analyze.drop(columns="clock_end_lag1")
 
 
 #%%
-###########################################
 ############ Cluster the events ###########
 ###########################################
 
@@ -201,9 +225,9 @@ df_analyze["cluster_start"] = np.where(
 )
 
 ## Populate these values downward
-df_analyze["cluster_start"] = df_analyze.groupby("eeid")["cluster_start"].fillna(
-    method="ffill"
-)
+df_analyze["cluster_start"] = df_analyze.groupby("eeid")[
+    "cluster_start"
+].fillna(method="ffill")
 
 ## take the max of the clock_end value -- get the last clock out for each cluster
 df_analyze["cluster_end"] = df_analyze.groupby(["eeid", "cluster_start"])[
@@ -213,7 +237,6 @@ df_analyze["cluster_end"] = df_analyze.groupby(["eeid", "cluster_start"])[
 df_analyze.head(10)
 
 # %%
-###########################################
 ########## Examine Processed Data #########
 ###########################################
 

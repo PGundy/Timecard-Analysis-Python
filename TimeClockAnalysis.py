@@ -168,12 +168,14 @@ class TimeClockAnalysis:
                 count_all - total_valid,
                 "'invalid' sequences of time within the data.\n This is not too unexpected, but will require some additional steps to resolve these overlapping time periods.",
             )
+            return False
         else:
             surviving_data = (
                 round(len(self.dfTime.index) / self.inputDataRowCount, 4,)
                 * 100
             )
             print(surviving_data, "%", "of the input data is analyzable")
+            return True
 
     def removeInvalidGapTiming(self):
         self.dfTime = self.dfTime[
@@ -234,10 +236,11 @@ TCA.sortdata()
 TCA.calcGapLastGapNext()
 TCA.validateGapTiming()
 
+##TODO: write data validation function using while loop over
+
 #%%
 
 dfWIP_preDrop = TCA.exportDataInProgress()
-
 ## drop, drops them & reports surviving %
 TCA.removeInvalidGapTiming()
 TCA.calcGapLastGapNext()
@@ -248,6 +251,9 @@ TCA.validateGapTiming()
 
 dfWIP = TCA.exportDataInProgress()
 dfWIP.head()
+
+print(dfWIP_preDrop.shape)
+print(dfWIP.shape)
 
 
 # %%
