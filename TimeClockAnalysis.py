@@ -1,5 +1,6 @@
 #%%
 import datetime
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -8,11 +9,12 @@ from dateutil.parser import parse
 
 #%%
 
-
+# ! TODO: Should I do this; @dataclass
 class TimeClockAnalysis:
     def __init__(
         self,
         inputDataRowCount=int,
+        inputDataSplitRowCount=int,
         resetLength=float,
         removeOverlaps=bool,
         dataKey=pd.Series,
@@ -34,6 +36,7 @@ class TimeClockAnalysis:
         TimeStart: str,
         TimeEnd: str,
         ResetTimerLength: float,
+        # TODO: add phantom gap limit in seconds (default to <=1 as max)
         # TODO: add weekly/biweekly/bimonthly pay periods
         # TODO: start date for PPs - Maybe down to "yyyy-mm-dd hh:mm"
     ):
@@ -69,7 +72,7 @@ class TimeClockAnalysis:
 
         return print("Ready for Analysis")
 
-    def sortdata(self):
+    def sortData(self):
         self.dfTime.sort_values(
             inplace=True,
             by=["EEID", "clock_in", "clock_out"],
@@ -77,6 +80,57 @@ class TimeClockAnalysis:
             # TODO: option to enable the third boolean to be True -- this would prioritize shorter segments if there are overlaps.
         )
         self.dfTime.reset_index(inplace=True, drop=True)
+
+    def splitAtMidnight(self):
+
+        self.sortData()
+
+        ## split the data into two areas:
+        ### (1) Data that DOES NOT cross over midnight
+        dfTime_good_data = self.dfTime[
+            self.dfTime["clock_in"].dt.date
+            == self.dfTime["clock_out"].dt.date
+        ]
+
+        ### (2) Data that DOES cross over midnight
+        dfTime_to_split = self.dfTime[
+            self.dfTime["clock_in"].dt.date
+            != self.dfTime["clock_out"].dt.date
+        ]
+
+        #### Create a pre-midnight segment via floor rounding
+        dfTime_premidnight = dfTime_to_split.copy()
+        dfTime_premidnight.reset_index(inplace=True, drop=True)
+        dfTime_premidnight["clock_out"] = dfTime_premidnight[
+            "clock_out"
+        ].dt.floor("D")
+        ### TODO: Is it helpful to have this end on the final sec?- pd.Timedelta("1second")
+
+        #### Create a post-midnight segment via ceil rounding
+        dfTime_postmidnight = dfTime_to_split.copy()
+        dfTime_postmidnight.reset_index(inplace=True, drop=True)
+        dfTime_postmidnight["clock_in"] = dfTime_postmidnight[
+            "clock_in"
+        ].dt.ceil("D")
+
+        ### Combine pre & post midnight segments
+        dfTime_split = dfTime_premidnight.merge(
+            dfTime_postmidnight, how="outer"
+        )
+
+        ### Combine 'good' data & the split segments
+        self.dfTime = dfTime_good_data.merge(dfTime_split, how="outer")
+        self.inputDataSplitRowCount = len(self.dfTime.index)
+
+        self.sortData()
+
+        ## Now we drop all interim objects
+        del (
+            dfTime_good_data,
+            dfTime_to_split,
+            dfTime_premidnight,
+            dfTime_postmidnight,
+        )
 
     def createDateVar(self, usingTimeStart=True):
         if usingTimeStart:
@@ -171,13 +225,17 @@ class TimeClockAnalysis:
             return False
         else:
             surviving_data = (
-                round(len(self.dfTime.index) / self.inputDataRowCount, 4,)
+                round(
+                    len(self.dfTime.index) / self.inputDataSplitRowCount,
+                    4,
+                )
                 * 100
             )
             print(surviving_data, "%", "of the input data is analyzable")
             return True
 
     def removeInvalidGapTiming(self):
+        ## TODO: IMPORTANT update to >= once tested. Using '>' for testing.
         self.dfTime = self.dfTime[
             (self.dfTime["gapLast"] > pd.Timedelta(seconds=0))
         ]
@@ -200,8 +258,6 @@ class TimeClockAnalysis:
 
 
 #%%
-
-import os
 
 testData = pd.read_csv(
     "./Example Data/Simulated Timecard Data for 2 Employees.csv",
@@ -231,15 +287,23 @@ TCA.setVars(
     TimeEnd="clock_out",
     ResetTimerLength=4.0,
 )
-TCA.createDateVar()
-TCA.sortdata()
-TCA.calcGapLastGapNext()
-TCA.validateGapTiming()
 
-##TODO: write data validation function using while loop over
+
+TCA.splitAtMidnight()
+TCA.createDateVar()
+TCA.sortData()
+
+TCA.calcGapLastGapNext()
+##TODO: How do we declare certain gap lengths as phantom gaps? If (gap_next <= Seconds) then 'skip' the gap. This would allow for ending a day at '23:59' and the 1 second gap to midnight would not be 'valid' or count, but would help with QA.
+
+TCA.validateGapTiming()
+##TODO: Write loop that validates the data so all time is chronological
+##TODO: modify print statement to export how many rows were removed each step + % of total analyzable data that remains AFTER completeing the entire loop. This will make it a single step to do this rather than requing a loop to complete it. Store the removed data & loop steps so it is printed out if ran again.
+
 
 #%%
 
+## ! CURRENTLY this is not working correctly on midnight splits -- they are falsely being flagged as invalid gaps!
 dfWIP_preDrop = TCA.exportDataInProgress()
 ## drop, drops them & reports surviving %
 TCA.removeInvalidGapTiming()
@@ -256,12 +320,9 @@ print(dfWIP_preDrop.shape)
 print(dfWIP.shape)
 
 
-# %%
-
-dfWIP[dfWIP["validGap"] == False]
-
-
 #%%
+
+### Below we can see that the data has been dropped
 
 dfWIP_preDrop[
     (
@@ -276,6 +337,26 @@ dfWIP[
     (
         (dfWIP["EEID"] == "_000001")
         & (dfWIP["date"] == parse("2010-02-16").date())
+    )
+].head()
+
+#%%
+
+
+dfWIP_preDrop[
+    (
+        (dfWIP_preDrop["EEID"] == "_000002")
+        & (dfWIP_preDrop["date"] == parse("2020-02-29").date())
+    )
+]
+
+#%%
+
+
+dfWIP[
+    (
+        (dfWIP["EEID"] == "_000002")
+        & (dfWIP["date"] == parse("2020-02-29").date())
     )
 ].head()
 
