@@ -15,7 +15,7 @@ class TimeClockAnalysis:
         self,
         inputDataRowCount=int,
         inputDataSplitRowCount=int,
-        resetLength=float,
+        ResetTimer=int,
         removeOverlaps=bool,
         dataKey=pd.Series,
         tsIn=datetime.datetime,
@@ -24,7 +24,6 @@ class TimeClockAnalysis:
         dfTC=pd.DataFrame(None),
         dfSH=pd.DataFrame(None),
     ):
-        self.resetLength = resetLength
         self.removeOverlaps = removeOverlaps
 
     #####
@@ -35,8 +34,7 @@ class TimeClockAnalysis:
         IDKey: str,
         TimeStart: str,
         TimeEnd: str,
-        ResetTimerLength: float,
-        # TODO: add phantom gap limit in seconds (default to <=1 as max)
+        ResetTimerMinutes: int,
         # TODO: add weekly/biweekly/bimonthly pay periods
         # TODO: start date for PPs - Maybe down to "yyyy-mm-dd hh:mm"
     ):
@@ -65,10 +63,11 @@ class TimeClockAnalysis:
         self.tsIn = TimeStart
         self.tsOut = TimeEnd
 
-        if not isinstance(ResetTimerLength, float):
+        if not isinstance(ResetTimerMinutes, int):
             raise ValueError(
-                "float type expected but not found for 'ResetTimerLength'"
+                "int type expected but not found for 'ResetTimerMinutes'"
             )
+        self.ResetTimer = ResetTimerMinutes
 
         return print("Ready for Analysis")
 
@@ -168,22 +167,20 @@ class TimeClockAnalysis:
         ### gapLast - Time from tsIn to the prior rows's tsOut
         ### gapNext - Time from tsOut to the next row's tsOut
         ###
+        fillna_with_this = pd.Timedelta(hours=24 * 99)
 
         #### The next block is used to calculate gapLast
 
-        self.dfTime["clock_end_lag1"] = self.dfTime.groupby(self.dataKey)[
+        self.dfTime["tsOut_lag1"] = self.dfTime.groupby(self.dataKey)[
             [self.tsOut]
         ].apply(
             lambda x: x.shift(1)
             ## move the row 'forward' 1 to get the prior value
         )
         self.dfTime["gapLast"] = (
-            self.dfTime[self.tsIn] - self.dfTime["clock_end_lag1"]
+            self.dfTime[self.tsIn] - self.dfTime["tsOut_lag1"]
         )
-        self.dfTime["gapLast"] = self.dfTime["gapLast"].fillna(
-            pd.Timedelta(hours=24 * 99)
-        )
-        self.dfTime = self.dfTime.drop(columns="clock_end_lag1")
+        self.dfTime["gapLast"].fillna(fillna_with_this, inplace=True)
 
         ####
         #### The next block is used to calculate gapNext
@@ -199,20 +196,26 @@ class TimeClockAnalysis:
             self.dfTime["tsIn_lead1"] - self.dfTime[self.tsOut]
         )
 
-        self.dfTime["gapNext"] = self.dfTime["gapNext"].fillna(
-            pd.Timedelta(hours=24 * 99)
-        )
+        self.dfTime["gapNext"].fillna(fillna_with_this, inplace=True)
 
-        self.dfTime = self.dfTime.drop(columns="tsIn_lead1")
+        self.dfTime.drop(
+            columns=["tsOut_lag1", "tsIn_lead1"], inplace=True
+        )
+        del fillna_with_this
 
     #####
     ##### Identify, quantiy & then remove non-linear time segments
     def validateGapTiming(self):
-        self.dfTime["validGap"] = (
-            ## TODO: IMPORTANT update to >= once tested. Using '>' for testing.
-            (self.dfTime["gapNext"] > pd.Timedelta(seconds=0))
-            & (self.dfTime["gapLast"] > pd.Timedelta(seconds=0))
-        )
+
+        zero_gap_time = pd.Timedelta(minutes=0)
+        ## TODO: min_gap_time could be set by user as variable phantomgap
+        min_gap_time = pd.Timedelta(minutes=0)
+
+        self.dfTime["validGap"] = self.dfTime["gapNext"] > min_gap_time
+
+        self.dfTime["phantomGap"] = (
+            self.dfTime["gapNext"] >= zero_gap_time
+        ) & (self.dfTime["gapNext"] <= min_gap_time)
 
         count_all = self.dfTime["validGap"].count()
         total_valid = self.dfTime["validGap"].sum()
@@ -233,11 +236,11 @@ class TimeClockAnalysis:
             )
             print(surviving_data, "%", "of the input data is analyzable")
             return True
+        del zero_gap_time, min_gap_time
 
     def removeInvalidGapTiming(self):
-        ## TODO: IMPORTANT update to >= once tested. Using '>' for testing.
         self.dfTime = self.dfTime[
-            (self.dfTime["gapLast"] > pd.Timedelta(seconds=0))
+            (self.dfTime["validGap"]) | (self.dfTime["phantomGap"])
         ]
         print(
             "The invalid segments have been removed.\n Please run: calcGapLastGapNext() & then validateGapTiming() to confirm data validity."
@@ -255,6 +258,15 @@ class TimeClockAnalysis:
             "5 - based on step 3 know whether step3 should be repeated",
             "THEN move onto more substantive analysis elements",
         )
+
+    ##
+    ##
+    ##
+    ##
+    ##
+    ## Cluster Events (Shifts)
+    def clusterEvents(self):
+        pass
 
 
 #%%
@@ -285,7 +297,7 @@ TCA.setVars(
     IDKey="EEID",
     TimeStart="clock_in",
     TimeEnd="clock_out",
-    ResetTimerLength=4.0,
+    ResetTimerMinutes=240,
 )
 
 
@@ -326,39 +338,50 @@ print(dfWIP.shape)
 
 dfWIP_preDrop[
     (
-        (dfWIP_preDrop["EEID"] == "_000001")
-        & (dfWIP_preDrop["date"] == parse("2010-02-16").date())
-    )
-]
-
-#%%
-
-dfWIP[
-    (
-        (dfWIP["EEID"] == "_000001")
-        & (dfWIP["date"] == parse("2010-02-16").date())
-    )
-].head()
-
-#%%
-
-
-dfWIP_preDrop[
-    (
         (dfWIP_preDrop["EEID"] == "_000002")
-        & (dfWIP_preDrop["date"] == parse("2020-02-29").date())
+        & (dfWIP_preDrop["date"] >= parse("2020-03-01").date())
     )
 ]
 
 #%%
-
 
 dfWIP[
     (
         (dfWIP["EEID"] == "_000002")
-        & (dfWIP["date"] == parse("2020-02-29").date())
+        & (dfWIP["date"] >= parse("2020-03-01").date())
     )
-].head()
+]
 
+# %%
+
+
+### clustering into shifts
+test = dfWIP[
+    (
+        (dfWIP["EEID"] == "_000002")
+        & (dfWIP["date"] >= parse("2020-02-28").date())
+    )
+].copy()
+
+
+test["cluster_start"] = test["clock_in"].where(
+    test["gapLast"] >= pd.Timedelta(minutes=240)
+)
+
+test["cluster_start"] = test.groupby("EEID")["cluster_start"].ffill()
+
+test["cluster_end"] = test["clock_out"].where(
+    test["gapNext"] >= pd.Timedelta(minutes=240)
+)
+
+test["cluster_end"] = test.groupby("EEID")["cluster_end"].bfill()
+
+
+test["break_length"] = test["gapNext"].where(
+    (test["validGap"]) & (test["gapNext"] < pd.Timedelta(minutes=240))
+)
+
+
+test.tail(10)
 
 # %%
