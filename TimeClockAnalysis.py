@@ -339,28 +339,14 @@ TCA.splitAtMidnight()
 TCA.createDateVar()
 TCA.sortData()
 
-test_preDrop = TCA.exportDataInProgress()
+### Commenting out for QA development
+## test_preDrop = TCA.exportDataInProgress()
 
 TCA.validateData()
 
 test = TCA.exportDataInProgress()
 ##TODO: How do we declare certain gap lengths as phantom gaps? If (gap_next <= Seconds) then 'skip' the gap. This would allow for ending a day at '23:59' and the 1 second gap to midnight would not be 'valid' or count, but would help with QA.
 
-
-# print(test_preDrop.shape)
-# print(test.shape)
-
-
-#%%
-
-### Below we can see that the data has been dropped
-
-test_preDrop[
-    (
-        (test_preDrop["EEID"] == "_000002")
-        & (test_preDrop["date"] >= parse("2020-03-01").date())
-    )
-]
 
 #%%
 
@@ -371,29 +357,26 @@ test[
     )
 ]
 
+#%%
+
+TCA.clusterEvents()
+test = TCA.exportDataInProgress()
 
 # %%
 
-TCA.clusterEvents()
-test2 = TCA.exportDataInProgress()
-
-test2_subset = test2[
+test_subset = test[
     (
-        (test2["EEID"] == "_000002")
-        & (test2["date"] >= parse("2020-03-01").date())
+        (test["EEID"] == "_000002")
+        & (test["date"] >= parse("2020-03-01").date())
     )
 ]
 
-test2_subset = test2_subset[["EEID", "clock_in", "clock_out"]]
+test_subset = test_subset[["EEID", "clock_in", "clock_out"]]
 
 
-# %%
-
-test2_subset["elapsed_time"] = (
-    test2_subset["clock_out"] - test2_subset["clock_in"]
+test_subset["elapsed_time_timedelta"] = (
+    test_subset["clock_out"] - test_subset["clock_in"]
 )
-
-temp = test2_subset["elapsed_time"]
 
 
 def timedelta_to_minutes(timedelta):
@@ -405,11 +388,10 @@ def timedelta_to_minutes(timedelta):
     return hours * 60 + minutes
 
 
-# timedelta_to_minutes(duration)
+test_subset["elapsed_time"] = test_subset["elapsed_time_timedelta"].apply(
+    lambda x: timedelta_to_minutes(x)
+)
 
-
-print(temp)
-print(temp.apply(lambda x: timedelta_to_minutes(x)))
-
+test_subset
 
 # %%
